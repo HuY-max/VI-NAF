@@ -1,0 +1,10 @@
+# data, checkpoints and results are not part of the repository
+input/
+model/
+output/
+*.nii
+*.nii.gz
+*.pkl
+# Python / Jupyter
+__pycache__/
+.ipynb_checkpoints/

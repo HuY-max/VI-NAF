@@ -1,0 +1,16 @@
+# Tested: Python 3.10, Linux, NVIDIA RTX 5090, CUDA 12.8.
+#
+# 1) PyTorch with CUDA — install the build for your driver first, e.g.
+#      pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+torch==2.10.0
+numpy==2.2.6
+SimpleITK==2.5.3
+astra-toolbox==2.5.0     # wheel bundles its CUDA runtime; needs an NVIDIA GPU
+matplotlib==3.10.8
+tqdm==4.67.3
+#
+# 2) tiny-cuda-nn PyTorch bindings (not on PyPI). Built from source after torch;
+#    needs the CUDA toolkit (nvcc) matching torch's CUDA version:
+#      pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
+#
+# 3) Notebooks (reconstruction/): any Jupyter frontend, e.g. pip install jupyterlab
