@@ -7,7 +7,7 @@ Two acquisitions of the same scanner are supported:
 - **CBCT**: conventional cone-beam CT with one source on the rotation axis and a half-fan (laterally offset) flat panel.
 - **msCBCT**: multi-source CBCT with 8 sources along z that fire in turn, each onto its own 65-row detector band, while the gantry keeps rotating by 0.125 deg per frame.
 
-A trained model can be re-projected onto a scanner-independent parallel-beam detector, so models from either acquisition produce directly comparable projections. The notebooks in `reconstruction/` give SIRT baselines of the measured scans and FBP / SIRT reconstructions of the re-projections.
+A trained model can be re-projected onto a scanner-independent parallel-beam detector, so models from either acquisition produce directly comparable projections. The notebooks in `reconstruction/` give SIRT baselines of the measured scans and FBP / SIRT reconstructions of the re-projections, each saved as an attenuation map, an HU volume and an HU DICOM series.
 
 ## Repository layout
 
@@ -33,7 +33,9 @@ VI-NAF/
     ├── CBCT_reconstruction.ipynb       SIRT of a measured CBCT scan
     ├── msCBCT_reconstruction.ipynb     SIRT of a measured msCBCT scan
     ├── parallel_reconstruction.ipynb   FBP / SIRT of a parallel re-projection
-    ├── astra_recon.py                  helper module used by the notebooks
+    ├── astra_recon.py                  ASTRA reconstructions used by the notebooks
+    ├── hu.py                           mu -> HU conversion and DICOM export
+    ├── attenuation_water_air.csv       mu of water and air vs energy, for HU
     └── params.py                       scanner calibration
 ```
 
@@ -186,7 +188,7 @@ Outputs in `out_path`:
 
 ## Reconstruction notebooks
 
-Run the notebooks from `reconstruction/` and edit only the parameter cell (section 2). Results are written to `reconstruction/output/` as `recon_<name>_<algorithm>.nii`, with `<name>` the input file name. The ASTRA code lives in `astra_recon.py`.
+Run the notebooks from `reconstruction/` and edit only the parameter cell (section 2). The ASTRA code lives in `astra_recon.py`, the HU conversion and DICOM export in `hu.py`.
 
 - `CBCT_reconstruction.ipynb`: SIRT of a measured CBCT scan on the exact `cone_vec` geometry used for NAF training (including the panel's vertical offset).
 - `msCBCT_reconstruction.ipynb`: SIRT of a measured msCBCT scan, with each frame's source, band and angle.
@@ -194,9 +196,26 @@ Run the notebooks from `reconstruction/` and edit only the parameter cell (secti
 
 The geometry comes from `params.py` and the file header; only the angular span, start angle and rotation sense are set in the parameter cell and must match the scan.
 
+Each notebook writes three outputs to `reconstruction/output/`, with `<stem> = recon_<name>_<algorithm>` and `<name>` the input file name:
+
+| File | Content |
+|---|---|
+| `<stem>.nii` | linear attenuation coefficient mu [cm^-1] |
+| `<stem>_HU.nii` | Hounsfield units |
+| `<stem>_HU_dicom/` | the HU volume as a CT DICOM series (one file per axial slice, int16, stored value = HU) |
+
+HU are computed at the mean energy of the beam, `MEAN_ENERGY_KEV` in the parameter cell:
+
+```
+HU = (mu - mu_water) / (mu_water - mu_air) * 1000
+```
+
+with mu_water and mu_air from `attenuation_water_air.csv` (0.5 keV steps, linearly interpolated). The mean energies are **95 keV for CBCT** and **67 keV for msCBCT**; for a parallel re-projection, use the energy of the scan the model was trained on. The DICOM series carries the phantom name (`PHANTOM`; default: the input file name), the device, kVp (`KVP`, default 110) and tube current (`TUBE_CURRENT_MA`, default 11 mA); the energy and the mu_water / mu_air used are recorded in `ImageComments`.
+
 ## Outputs and conventions
 
-- Volumes are linear attenuation coefficients mu in cm^-1, float32 NIfTI with dims (x, y, z) and the voxel spacing in mm in the header.
+- NAF volumes and `<stem>.nii` are linear attenuation coefficients mu in cm^-1; `<stem>_HU.nii` holds HU. All are float32 NIfTI with dims (x, y, z) and the voxel spacing in mm in the header.
+- DICOM slices use `ImageOrientationPatient = [1, 0, 0, 0, 1, 0]` and the same centred grid as the NIfTI files.
 - The rotation axis passes through the centre of the volume; +z runs along the axis. At gantry angle 0 the source is at -y and detector columns run along +x (ASTRA's volume frame).
 - NAF volumes, SIRT volumes and parallel-beam reconstructions on the default grid (240 x 240 x 120 mm at 0.4 mm) share the same voxel grid.
 

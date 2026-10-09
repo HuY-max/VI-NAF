@@ -20,6 +20,8 @@ ARRAY LAYOUTS
     ASTRA projections : (v, frame, u)
     volume            : (z, y, x)  ->  saved as .nii dims (x, y, z), voxel width in mm
     mu                : cm^-1, i.e. ``rec * 10 / voxel_mm`` (ASTRA works in voxels)
+
+``save()`` writes mu, HU and an HU DICOM series (see hu.py).
 """
 
 import json
@@ -32,6 +34,7 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+import hu
 from params import SystemParams, BinnedGeometry
 
 FBP_FILTERS = ("ram-lak", "shepp-logan", "cosine", "hamming", "hann")
@@ -130,13 +133,30 @@ class _Reconstruction:
             raise RuntimeError("run() first")
         plot_slices(self.rec_cm, self.label)
 
-    def save(self, out_dir):
-        """Write ``<out_dir>/recon_<name>_<label>.nii`` (mu in cm^-1)."""
+    def save(self, out_dir, energy_kev, phantom=None, kvp=110.0,
+             tube_current_ma=11.0, device=None):
+        """Write the three outputs to ``out_dir``, ``<stem> = recon_<name>_<label>``:
+
+          <stem>.nii          mu [cm^-1]
+          <stem>_HU.nii       HU at the mean beam energy ``energy_kev`` [keV]
+          <stem>_HU_dicom/    the same HU as a CT DICOM series
+
+        ``phantom`` (None = the input file name), ``device`` (None = the
+        acquisition), ``kvp`` and ``tube_current_ma`` only fill DICOM tags.
+        """
         if self.rec_cm is None:
             raise RuntimeError("run() first")
-        return save_volume(self.rec_cm,
-                           Path(out_dir) / f"recon_{self.name}_{self.label}.nii",
-                           self.voxel_size)
+        out_dir, stem = Path(out_dir), f"recon_{self.name}_{self.label}"
+        save_volume(self.rec_cm, out_dir / f"{stem}.nii", self.voxel_size)
+        hu_vol = hu.mu_to_hu(self.rec_cm, energy_kev)
+        print(f"HU range [{hu_vol.min():.0f}, {hu_vol.max():.0f}]")
+        save_volume(hu_vol, out_dir / f"{stem}_HU.nii", self.voxel_size)
+        hu.write_dicom_series(hu_vol, out_dir / f"{stem}_HU_dicom", self.voxel_size,
+                              energy_kev=energy_kev, phantom=phantom or self.name,
+                              device=device or self.device, kvp=kvp,
+                              tube_current_ma=tube_current_ma,
+                              description=f"{self.label}, {self.name}")
+        return out_dir / stem
 
 
 # =============================================================================
@@ -192,7 +212,7 @@ class ConeBeamReconstruction(_Reconstruction):
             self.angle_deg = (start_deg + (np.arange(n) // ns) * (span_deg / (n // ns))
                               + src * P.deg_per_frame)
 
-        self.acquisition = acquisition
+        self.acquisition = self.device = acquisition
         self.span_deg, self.start_deg = span_deg, start_deg
         self.rot_dir = int(rot_dir)
         self.voxel_size = float(voxel_size or g.pixel_size)
@@ -376,6 +396,7 @@ class ParallelReconstruction(_Reconstruction):
         self.det_pitch = float(det_pitch)
         self.source = Path(source) if source else None
         self.name = name
+        self.device = "parallel re-projection"     # DICOM tag; save(device=) overrides
         self.span_deg, self.start_deg = span_deg, start_deg
         self.rot_dir = int(rot_dir)
         self.fov_margin = float(fov_margin)

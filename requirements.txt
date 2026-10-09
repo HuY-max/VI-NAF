@@ -8,6 +8,7 @@ SimpleITK==2.5.3
 astra-toolbox==2.5.0     # wheel bundles its CUDA runtime; needs an NVIDIA GPU
 matplotlib==3.10.8
 tqdm==4.67.3
+pydicom==3.0.2           # DICOM export of the reconstructions
 #
 # 2) tiny-cuda-nn PyTorch bindings (not on PyPI). Built from source after torch;
 #    needs the CUDA toolkit (nvcc) matching torch's CUDA version:
